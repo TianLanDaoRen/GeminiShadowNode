@@ -17,9 +17,6 @@
 2.  你需要 **Root 权限** (或者使用 `sudo`)。
 3.  确保服务器已安装 **Node.js** (建议 v18 或更高版本)。
 
-> **还没有安装 Node.js?**
-> 请运行：`curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs`
-
 ---
 
 ## 第一步：创建项目目录
@@ -55,169 +52,279 @@ npm install express ws cors
 ```javascript
 import express from 'express';
 import http from 'http';
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws'; // 引入 WebSocket 常量
 import crypto from 'crypto';
 import cors from 'cors';
 
 const PORT = process.env.PORT || 3000;
-const REQUEST_TIMEOUT = 240000; // 4分钟超时，给视频生成留足时间
+const REQUEST_TIMEOUT = 240000;
 
 const app = express();
 const server = http.createServer(app);
 
-// 【关键修改 1】设置 WebSocket 最大负载
-// 默认是 100MB。我们把它改为 512MB (单位是字节) 以支持大视频/图片
-const MAX_PAYLOAD = 512 * 1024 * 1024; 
-const wss = new WebSocketServer({ 
-  server, 
-  path: '/ws',
-  maxPayload: MAX_PAYLOAD 
+// 512MB 大载荷支持
+const MAX_PAYLOAD = 512 * 1024 * 1024;
+const wss = new WebSocketServer({
+    server,
+    path: '/ws',
+    maxPayload: MAX_PAYLOAD
 });
 
-let appletSocket = null;
+// 【关键修改 1】从单个 socket 变为 节点池 (Set)
+const appletPool = new Set();
 const pendingRequests = new Map();
 
+// 【新增】广播集群状态给所有节点
+function broadcastClusterStatus() {
+    const count = appletPool.size;
+    // 构造系统消息
+    const msg = JSON.stringify({
+        type: 'cluster_sync',
+        count: count
+    });
+
+    appletPool.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(msg);
+        }
+    });
+}
+
 // =================================================================
-// 心跳检测逻辑 (智能豁免版)
+// 心跳与存活检测 (全员检测)
 // =================================================================
 function heartbeat() {
-  this.isAlive = true;
+    this.isAlive = true;
 }
 
 const interval = setInterval(function ping() {
-  // 如果没有连接，跳过
-  if (!appletSocket) return;
+    // 遍历池子里的每一个节点
+    appletPool.forEach((ws) => {
+        if (ws.isAlive === false) {
+            // 豁免逻辑：如果这个节点正在干活，别杀它
+            if (ws.pendingTasks > 0) {
+                console.log(`⚠️ 节点 [${ws.nodeId}] 心跳超时，但有 ${ws.pendingTasks} 个任务在运行，豁免...`);
+                ws.ping();
+                return;
+            }
+            console.log(`💀 节点 [${ws.nodeId}] 失去响应，移除连接。`);
+            return ws.terminate();
+        }
 
-  const ws = appletSocket;
-  
-  // 检查连接状态
-  if (ws.isAlive === false) {
-    // 【关键修改】: 检查是否有正在处理的请求
-    // 如果正在生成任务，Applet 可能没空回心跳，此时给予“豁免权”
-    if (pendingRequests.size > 0) {
-        console.log(`⚠️ 心跳未响应，但当前有 ${pendingRequests.size} 个任务正在运行。保持连接活跃，暂不断开...`);
-        ws.ping(); 
-        return;
-    }
-
-    // 只有在既没有心跳，又没有任务的时候，才认为是真的挂了
-    console.log('💀 心跳超时且无活动任务，判定为连接断开，正在终止...');
-    return ws.terminate();
-  }
-
-  // 标记为 false，准备发送 Ping
-  ws.isAlive = false;
-  ws.ping(); 
-}, 30000); // 30秒一次心跳
+        ws.isAlive = false;
+        ws.ping();
+    });
+}, 30000);
 
 wss.on('close', () => {
-  clearInterval(interval);
+    clearInterval(interval);
 });
 
 // =================================================================
-// WebSocket 连接处理
+// WebSocket 连接管理
 // =================================================================
-wss.on('connection', (ws) => {
-  console.log('✅ 安全执行节点 (Applet) 已连接!');
-  
-  ws.isAlive = true;
-  ws.on('pong', heartbeat); 
-
-  appletSocket = ws;
-
-  ws.on('message', (message) => {
-    // 只要收到消息，就视为活着
+wss.on('connection', (ws, req) => {
+    // 给每个连接分配一个短 ID，方便日志观察
+    ws.nodeId = Math.random().toString(36).substring(2, 7);
     ws.isAlive = true;
+    ws.pendingTasks = 0; // 【关键】记录该节点的负载
+    ws.lastUsed = 0; // 【新增】初始化上次使用时间，0 表示还没用过（优先级最高）
 
-    try {
-      const msgString = message.toString();
-      
-      // 忽略纯文本心跳
-      if (msgString.trim().toLowerCase().startsWith('p')) {
-        return;
-      }
+    // 加入节点池
+    appletPool.add(ws);
 
-      const { id, success, payload, error } = JSON.parse(msgString);
-      
-      if (pendingRequests.has(id)) {
-        const { res, timeoutId } = pendingRequests.get(id);
-        clearTimeout(timeoutId); // 停止 HTTP 超时计时器
-        
-        if (success) {
-          res.json(payload);
-        } else {
-          res.status(500).json({ error: { code: 500, message: error || 'Unknown error', status: 'INTERNAL_ERROR' } });
+    // 【关键】连接成功后，广播最新数量
+    broadcastClusterStatus();
+
+    const clientIp = req.socket.remoteAddress;
+    console.log(`✅ 新节点接入 [ID: ${ws.nodeId}] 来自: ${clientIp}. 当前在线节点数: ${appletPool.size}`);
+
+    ws.on('pong', heartbeat);
+
+    ws.on('message', (message) => {
+        ws.isAlive = true;
+        try {
+            const msgString = message.toString();
+            if (msgString.trim().toLowerCase().startsWith('p')) return;
+
+            const { id, success, payload, error } = JSON.parse(msgString);
+
+            if (pendingRequests.has(id)) {
+                const { res, timeoutId } = pendingRequests.get(id);
+                clearTimeout(timeoutId);
+
+                // 任务完成，减少该节点的负载计数
+                ws.pendingTasks = Math.max(0, ws.pendingTasks - 1);
+                console.log(`📉 节点 [${ws.nodeId}] 完成任务. 当前负载: ${ws.pendingTasks}`);
+
+                if (success) {
+                    res.json(payload);
+                } else {
+                    res.status(500).json({ error: { code: 500, message: error || 'Applet Error', status: 'INTERNAL_ERROR' } });
+                }
+                pendingRequests.delete(id);
+            }
+        } catch (e) {
+            if (!e.message.includes('Unexpected token')) console.error('消息解析失败:', e.message);
         }
-        pendingRequests.delete(id); // 任务完成，从队列移除
-      }
-    } catch (e) {
-      // 忽略非JSON的干扰信息
-      if (!e.message.includes('Unexpected token')) {
-          console.error('⚠️ 收到非标准消息:', e.message);
-      }
-    }
-  });
+    });
 
-  ws.on('close', () => {
-    console.log('❌ 安全执行节点 (Applet) 已断开.');
-    if (appletSocket === ws) {
-        appletSocket = null;
-    }
-    // 只有连接彻底断开时，才报错所有挂起的请求
-    for (const [id, { res, timeoutId }] of pendingRequests.entries()) {
-      clearTimeout(timeoutId);
-      res.status(503).json({ error: { code: 503, message: 'Execution node disconnected.', status: 'UNAVAILABLE' } });
-      pendingRequests.delete(id);
-    }
-  });
-  
-  ws.on('error', (err) => {
-    console.error('WebSocket 错误:', err);
-  });
+    ws.on('close', () => {
+        console.log(`❌ 节点 [${ws.nodeId}] 断开连接.`);
+        appletPool.delete(ws);
+        // 【新增】故障转移逻辑
+        // 检查这个断开的节点手头有没有还没做完的任务
+        // 注意：我们需要遍历 pendingRequests，找到分配给这个 ws 的任务
+        // 为了高效，我们需要稍微修改 pendingRequests 的结构，或者遍历查找
+        // 简单高效的做法：遍历 pendingRequests
+        for (const [id, reqData] of pendingRequests.entries()) {
+            // 这里的 reqData 是 { res, timeoutId, assignedNodeId } 
+            // 我们需要在分配任务时记录 assignedNodeId
+            if (reqData.assignedNodeId === ws.nodeId) {
+                console.log(`⚠️ 任务 [${id}] 因节点 [${ws.nodeId}] 断开而中断，正在尝试故障转移...`);
+
+                // 尝试获取新节点
+                const newNode = getBestNode();
+
+                if (newNode) {
+                    console.log(`🔄 任务 [${id}] 重新调度 -> 节点 [${newNode.nodeId}]`);
+                    // 更新分配记录
+                    reqData.assignedNodeId = newNode.nodeId;
+                    // 增加新节点负载
+                    newNode.pendingTasks++;
+                    // 重新发送指令 (注意：我们需要在 reqData 里暂存原始的 message 字符串或 body)
+                    // 这一步需要我们在 app.post 里把 body 也存进 pendingRequests
+                    newNode.send(JSON.stringify({
+                        id: id,
+                        path: reqData.originalPath, // 需在 app.post 存储
+                        body: reqData.originalBody  // 需在 app.post 存储
+                    }));
+                } else {
+                    console.error(`💥 任务 [${id}] 故障转移失败：无可用节点。`);
+                    // 既然没节点了，立即报错，不要让用户等超时
+                    clearTimeout(reqData.timeoutId);
+                    reqData.res.status(503).json({
+                        error: { code: 503, message: 'Worker node crashed and no standby nodes available.', status: 'UNAVAILABLE' }
+                    });
+                    pendingRequests.delete(id);
+                }
+            }
+        }
+        // 【关键】断开后，广播最新数量
+        broadcastClusterStatus();
+        console.log(`📊 当前剩余节点数: ${appletPool.size}`);
+    });
+
+    ws.on('error', (err) => {
+        console.error(`节点 [${ws.nodeId}] 错误:`, err.message);
+    });
 });
 
 // =================================================================
-// Express HTTP 服务器
+// 优化后的调度算法 (O(N) + LRU 策略)
+// =================================================================
+function getBestNode() {
+    let bestNode = null;
+    let minLoad = Infinity;
+    let oldestUsage = Infinity; // 记录“上一次工作时间”，越小表示休息得越久
+
+    // 直接遍历 Set，无需 Array.from，零内存分配
+    for (const node of appletPool) {
+        // 1. 过滤掉断开的
+        if (node.readyState !== WebSocket.OPEN) continue;
+
+        const load = node.pendingTasks || 0;
+        const lastUsed = node.lastUsed || 0; // 默认为 0 (很久以前)
+
+        // 2. 第一优先级：找负载最小的
+        if (load < minLoad) {
+            bestNode = node;
+            minLoad = load;
+            oldestUsage = lastUsed;
+        }
+        // 3. 第二优先级：负载一样时，选休息最久的 (LRU)
+        // 这一步至关重要！它实现了“账号轮询”的效果，保护你的 API Rate Limit
+        else if (load === minLoad) {
+            if (lastUsed < oldestUsage) {
+                bestNode = node;
+                oldestUsage = lastUsed;
+            }
+        }
+    }
+
+    return bestNode;
+}
+
+// =================================================================
+// Express HTTP API
 // =================================================================
 
 app.use(cors());
-// 【关键修改 2】放开 HTTP JSON 大小限制
-app.use(express.json({ limit: '512mb' })); 
+app.use(express.json({ limit: '512mb' }));
 app.use(express.urlencoded({ limit: '512mb', extended: true }));
 
 app.get('/', (req, res) => {
-  res.status(200).json({
-    status: 'running',
-    appletConnected: !!appletSocket,
-    pendingTasks: pendingRequests.size
-  });
+    // 统计总负载
+    let totalLoad = 0;
+    appletPool.forEach(ws => totalLoad += ws.pendingTasks);
+
+    res.status(200).json({
+        status: 'running',
+        mode: 'distributed_cluster',
+        totalNodes: appletPool.size,
+        totalPendingTasks: pendingRequests.size,
+        nodes: Array.from(appletPool).map(ws => ({
+            id: ws.nodeId,
+            load: ws.pendingTasks,
+            alive: ws.isAlive
+        }))
+    });
 });
 
 app.post('/v1beta/*', (req, res) => {
-  if (!appletSocket) {
-    return res.status(503).json({ error: { code: 503, message: 'Service Unavailable: No Applet Connected', status: 'UNAVAILABLE' } });
-  }
-  
-  const id = crypto.randomUUID();
-  const path = req.originalUrl; 
-  
-  // HTTP 层的超时控制
-  const timeoutId = setTimeout(() => {
-    if (pendingRequests.has(id)) {
-      console.log(`⏰ 任务 [${id}] 超时 (${REQUEST_TIMEOUT}ms)`);
-      res.status(504).json({ error: { code: 504, message: 'Gateway Timeout', status: 'DEADLINE_EXCEEDED' } });
-      pendingRequests.delete(id);
+    // 【关键修改 2】获取最佳节点
+    const targetNode = getBestNode();
+
+    if (!targetNode) {
+        return res.status(503).json({ error: { code: 503, message: 'No available execution nodes connected.', status: 'UNAVAILABLE' } });
     }
-  }, REQUEST_TIMEOUT);
 
-  pendingRequests.set(id, { res, timeoutId });
+    const id = crypto.randomUUID();
+    const path = req.originalUrl;
+    const body = req.body; // 获取 body
 
-  const message = JSON.stringify({ id, path, body: req.body });
-  appletSocket.send(message);
+    // 增加节点负载计数
+    // 【新增】更新该节点的“最后使用时间”为当前时间
+    // 这样它在下一轮调度中，优先级就会排到最后，让其他兄弟节点先上
+    targetNode.lastUsed = Date.now();
+    targetNode.pendingTasks++;
+    console.log(`🚀 调度任务 [${id}] -> 节点 [${targetNode.nodeId}] (负载: ${targetNode.pendingTasks})`);
+
+    const timeoutId = setTimeout(() => {
+        if (pendingRequests.has(id)) {
+            console.log(`⏰ 任务 [${id}] 超时. 修正节点 [${targetNode.nodeId}] 负载.`);
+            // 超时了也要把负载减回去，防止计数器泄露
+            targetNode.pendingTasks = Math.max(0, targetNode.pendingTasks - 1);
+
+            res.status(504).json({ error: { code: 504, message: 'Gateway Timeout', status: 'DEADLINE_EXCEEDED' } });
+            pendingRequests.delete(id);
+        }
+    }, REQUEST_TIMEOUT);
+
+    // 【关键修改】在 Map 里存储更多信息，以便故障转移时使用
+    pendingRequests.set(id, {
+        res,
+        timeoutId,
+        assignedNodeId: targetNode.nodeId, // 记录是谁接的单
+        originalPath: path,                // 存下来备用
+        originalBody: body                 // 存下来备用
+    });
+
+    targetNode.send(JSON.stringify({ id, path, body: req.body }));
 });
 
 server.listen(PORT, () => {
-  console.log(`🚀 服务器运行中: http://localhost:${PORT}`);
+    console.log(`🚀 分布式中转集群启动: http://localhost:${PORT}`);
 });
 ```
 

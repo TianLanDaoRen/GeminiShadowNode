@@ -262,7 +262,7 @@
         });
 
         // ================= 配置 =================
-        const API_BASE = 'https://your-site.com/v1beta/models';
+        const API_BASE = 'https://your-site.top/v1beta/models';
 
         // 上下文历史 (Chat History)
         let chatHistory = [];
@@ -381,6 +381,8 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         contents: chatHistory, // 发送完整历史
+                        // 【新增】注入 Google 搜索工具
+                        tools: [{ googleSearch: {} }],
                         generationConfig: { temperature: 0.7 }
                     })
                 });
@@ -434,15 +436,40 @@
             let contentHtml = '';
 
             parts.forEach(part => {
-                // 文本渲染 (Markdown)
+                // 1. 文本渲染
                 if (part.text) {
                     const parsedText = marked.parse(part.text);
                     contentHtml += `<div class="prose prose-invert max-w-none text-sm leading-relaxed break-words">${parsedText}</div>`;
                 }
-                // 图片渲染
-                if (part.inlineData || part.inline_data) { // 兼容两种写法
+
+                // 2. 图片渲染
+                if (part.inlineData || part.inline_data) {
                     const imgData = part.inlineData || part.inline_data;
                     contentHtml += `<div class="mt-2"><img src="data:${imgData.mimeType};base64,${imgData.data}" class="max-w-full sm:max-w-xs rounded-lg border border-gray-600"></div>`;
+                }
+
+                // 【新增】3. 工具调用渲染 (Function Call)
+                if (part.functionCall) {
+                    const funcName = part.functionCall.name;
+                    const args = JSON.stringify(part.functionCall.args, null, 2);
+                    contentHtml += `
+                        <div class="mt-2 p-3 bg-gray-900 rounded border border-purple-500/50 font-mono text-xs">
+                            <div class="flex items-center gap-2 text-purple-400 mb-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                <span>调用工具: ${funcName}</span>
+                            </div>
+                            <pre class="text-gray-400 overflow-x-auto">${args}</pre>
+                        </div>
+                    `;
+                }
+
+                // 【新增】4. 工具执行结果 (Function Response - 用于回显历史)
+                if (part.functionResponse) {
+                    contentHtml += `
+                        <div class="mt-2 p-2 bg-gray-800/50 rounded border border-gray-700 font-mono text-xs text-gray-500">
+                            ↳ 工具返回: ${JSON.stringify(part.functionResponse.response)}
+                        </div>
+                     `;
                 }
             });
 
@@ -478,16 +505,21 @@
         }
 
         function handleEnter(e) {
-            // 核心修改：检测 Ctrl (Windows/Linux) 或 Meta (Mac Command键) + Enter
+            // 检测 Ctrl/Cmd + Enter
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault(); // 阻止默认的换行行为
+                e.preventDefault();
+                // 【关键修复】检查发送按钮是否被禁用
+                // 如果正在发送中（按钮是灰的），则忽略这次快捷键
+                if (document.getElementById('send-btn').disabled) {
+                    console.log('正在发送中，忽略快捷键...');
+                    return;
+                }
+
                 sendMessage();
                 return;
             }
 
             // 自动高度调整
-            // 使用 setTimeout 0 确保在 Enter 换行符被插入文本框“之后”再计算高度
-            // 这样输入框会随着换行自动撑高
             setTimeout(() => {
                 e.target.style.height = 'auto';
                 e.target.style.height = e.target.scrollHeight + 'px';
