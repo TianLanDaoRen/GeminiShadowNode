@@ -185,10 +185,14 @@ export class GeminiService {
     return 'Unknown Error';
   }
 
-  // --- Gemini API 优化 ---
+  // --- Gemini API Method (修复图片支持) ---
   async proxyRequest(model: string, rawBody: any): Promise<any> {
     try {
-      const { contents, generationConfig, safetySettings, systemInstruction, tools, toolConfig } = rawBody;
+      let { contents, generationConfig, safetySettings, systemInstruction, tools, toolConfig } = rawBody;
+
+      // 【关键修复 1】清洗 contents，适配图片格式
+      // 将 REST API 的 inline_data 转换为 SDK 需要的 inlineData
+      contents = this.normalizeContents(contents);
 
       // 清理 Config
       const sanitizedConfig = this.cleanGenerationConfig(generationConfig);
@@ -201,6 +205,7 @@ export class GeminiService {
         toolConfig
       };
 
+      // 移除 undefined 键
       Object.keys(config).forEach(key => config[key] === undefined && delete config[key]);
       
       // 调用 SDK
@@ -210,17 +215,50 @@ export class GeminiService {
         config: config
       });
       
-      // 【优化 5】直接序列化，避免保存中间变量
+      // 序列化响应
       const plainResponse = JSON.parse(JSON.stringify(response));
       if (plainResponse.sdkHttpResponse) delete plainResponse.sdkHttpResponse;
       
       return plainResponse;
 
     } catch (error: any) {
-      // 只记录错误信息，不记录错误对象堆栈（可能包含大对象）
       console.error('Gemini API Fail:', error.message);
       throw new Error(error.message);
     }
+  }
+
+  // 【新增辅助方法】格式标准化
+  private normalizeContents(contents: any[]): any[] {
+    if (!Array.isArray(contents)) return [];
+
+    return contents.map(content => {
+      // 确保 parts 存在
+      if (!content.parts || !Array.isArray(content.parts)) return content;
+
+      const newParts = content.parts.map((part: any) => {
+        // 检查是否是 REST 风格的图片数据 (inline_data)
+        if (part.inline_data) {
+          return {
+            inlineData: {
+              mimeType: part.inline_data.mime_type || part.inline_data.mimeType,
+              data: part.inline_data.data
+            }
+          };
+        }
+        // 如果已经是 inlineData，确保内部字段也是驼峰
+        if (part.inlineData) {
+           // SDK 有时比较宽容，但为了保险，检查 mime_type
+           if (part.inlineData.mime_type && !part.inlineData.mimeType) {
+             part.inlineData.mimeType = part.inlineData.mime_type;
+             delete part.inlineData.mime_type;
+           }
+           return part;
+        }
+        return part;
+      });
+
+      return { ...content, parts: newParts };
+    });
   }
 
   private cleanGenerationConfig(config: any): any {

@@ -15,9 +15,9 @@ export class AppComponent implements OnInit, OnDestroy {
   private readonly destroy$ = new Subject<void>();
 
   // 默认连接地址
-  relayUrl = signal<string>('wss://yunsisanren.top/ws'); 
+  relayUrl = signal<string>('wss://your-site/ws'); 
   
-  // 日志仅保留最新的 20 条，防止 DOM 节点过多消耗内存
+  // 日志仅保留最新的 50 条，防止 DOM 节点过多消耗内存
   logs = signal<string[]>([]);
   
   connectionStatus = this.proxyService.connectionStatus;

@@ -1,5 +1,5 @@
 {
-  "name": "Gemini WebSocket Proxy",
-  "description": "An application demonstrating a secure WebSocket-based proxy architecture. This applet acts as a secure execution node, actively connecting to a relay server via WebSocket to process Gemini API requests without exposing the API key.",
+  "name": "Gemini Shadow Node",
+  "description": "Gemini Shadow Node 是一个基于 Angular 构建的高性能 WebSocket 执行节点。它的设计初衷是打破环境限制，将 Google AI Studio 的网页版运行环境转化为一个私有的、标准化的 API 基础设施。\n它可以潜伏在低配置 VPS 的后台（通过 VNC/Fluxbox 运行），通过加密隧道与中转服务器通信，为您免费解锁 Gemini 3.0 Pro 及 Nano Banana 的全部能力。",
   "requestFramePermissions": []
 }
