@@ -20,6 +20,38 @@
           Stealth Mode
         </span>
       </div>
+
+      <!-- 【新增】集群状态显示 -->
+      <div class="mt-6 flex justify-center">
+        <div class="inline-flex items-center gap-4 px-4 py-2 bg-gray-900/80 border border-gray-700 rounded-lg shadow-lg backdrop-blur-md">
+          
+          <!-- 节点计数器 -->
+          <div class="flex items-center gap-2">
+            <div class="relative flex h-3 w-3">
+              @if (nodeCount() > 0) {
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-3 w-3 bg-purple-500"></span>
+              } @else {
+                <span class="relative inline-flex rounded-full h-3 w-3 bg-gray-500"></span>
+              }
+            </div>
+            <span class="text-xs font-mono text-gray-400 uppercase tracking-wider">Cluster Nodes:</span>
+            <span class="text-lg font-bold font-mono text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">
+              {{ nodeCount() }}
+            </span>
+          </div>
+
+          <!-- 分隔符 -->
+          <div class="w-[1px] h-4 bg-gray-700"></div>
+
+          <!-- 负载能力预估 (装逼用的，假设计算力翻倍) -->
+          <div class="flex items-center gap-2">
+             <span class="text-[10px] font-mono text-gray-500">CAPACITY:</span>
+             <span class="text-xs font-mono text-cyan-400">{{ nodeCount() * 100 }}%</span>
+          </div>
+
+        </div>
+      </div>
     </header>
 
     <!-- 主控制台 -->

@@ -21,6 +21,7 @@ export class AppComponent implements OnInit, OnDestroy {
   logs = signal<string[]>([]);
   
   connectionStatus = this.proxyService.connectionStatus;
+  nodeCount = this.proxyService.nodeCount;
 
   constructor() {
     // 监听 Service 发来的精简消息

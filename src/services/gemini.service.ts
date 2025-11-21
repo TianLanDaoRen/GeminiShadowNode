@@ -19,6 +19,8 @@ export class GeminiService {
   
   // 【优化 1】UI 消息流：仅保留简短的系统通知，不再传输大数据，防止 UI 卡死
   messages$ = new Subject<any>();
+  // 1. 在类中新增一个 Signal
+  nodeCount = signal<number>(0); // 默认为 0
   
   private isExpectedDisconnect = false; 
   private reconnectTimer: any = null;
@@ -88,6 +90,13 @@ export class GeminiService {
   private async handleIncomingMessage(message: any) {
     // 忽略心跳包
     if (message === 'ping' || message.type === 'ping') return;
+
+    // 【新增】处理集群同步消息
+    if (message && message.type === 'cluster_sync') {
+        console.log(`[System] Cluster Sync: ${message.count} nodes active`);
+        this.nodeCount.set(message.count);
+        return; // 系统消息不作为任务处理
+    }
 
     if (message && message.id && message.path && message.body) {
       // 【优化 3】绝对不要打印 message.body！如果是视频，这行 log 会直接撑爆内存
