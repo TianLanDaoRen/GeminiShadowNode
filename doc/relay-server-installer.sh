@@ -1,76 +1,108 @@
 #!/bin/bash
 
 # =================================================================
-# Gemini Relay Server Installer (Smart Path V4)
-# 作者: 云笥散人 | 架构优化: 世纪级全能技术宗师
+# Gemini Relay Server Installer (Ultimate Edition)
 # =================================================================
 
-# 颜色定义
-RED='\033[0;31m'
-GREEN='\033[0;32m'
+# 颜色定义 (Neon Palette)
+RED='\033[1;31m'
+GREEN='\033[1;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
+BLUE='\033[1;34m'
+PURPLE='\033[1;35m'
+CYAN='\033[1;36m'
+WHITE='\033[1;37m'
 NC='\033[0m'
 
+# 检查 Root 权限
 if [ "$EUID" -ne 0 ]; then
-  echo -e "${RED}错误: 请使用 root 权限运行 (sudo -i)。${NC}"
+  echo -e "${RED}❌ 错误: 请赋予我 Root 权限 (sudo -i) 以释放全部潜能。${NC}"
   exit 1
 fi
 
 clear
-echo -e "${BLUE}#########################################################${NC}"
-echo -e "${BLUE}#    Gemini Relay Server Installer (Smart V4)           #${NC}"
-echo -e "${BLUE}#########################################################${NC}"
+
+# =================================================================
+# 🆒 酷炫启动头 (Cyberpunk Style)
+# =================================================================
+echo -e "${CYAN}"
+cat << "EOF"
+  ____                 _       _   
+ / ___| ___ _ __ ___  (_)____ (_)  
+| |  _ / _ \ '_ ` _ \ | |_  / | |  
+| |_| |  __/ | | | | || |/ /  | |  
+ \____|\___|_| |_| |_||_/___| |_|  
+                    |__/           
+       RELAY SERVER INSTALLER
+EOF
+echo -e "${NC}"
+echo -e "${PURPLE}=========================================================${NC}"
+echo -e "${YELLOW} ⚡ 原创作者    : ${WHITE}云笥散人${NC}"
+echo -e "${YELLOW} 🧠 架构师    : ${WHITE}Gemini 3.0 Pro${NC}"
+echo -e "${YELLOW} 🛠  版本号      : ${GREEN}Ultimate V6 (Production Ready)${NC}"
+echo -e "${PURPLE}=========================================================${NC}"
+echo -e "${BLUE} 正在初始化量子连接...${NC}"
 echo ""
 
-read -p "是否继续安装? (y/n): " consent
-if [[ "$consent" != "y" ]]; then exit 0; fi
+# 简单的确认交互
+read -p "准备好部署了吗? (y/n): " consent
+if [[ "$consent" != "y" ]]; then 
+    echo -e "${CYAN}操作已取消，期待下次相遇。${NC}"
+    exit 0
+fi
 
 # =================================================================
 # 0. 配置参数
 # =================================================================
-echo -e "\n${GREEN}[0/5] 配置服务参数...${NC}"
+echo -e "\n${GREEN}[0/5] 核心参数配置...${NC}"
 
 read -p "请输入服务监听端口 [默认 3000]: " USER_PORT
 USER_PORT=${USER_PORT:-3000}
 
+# 端口校验
 if ! [[ "$USER_PORT" =~ ^[0-9]+$ ]] || [ "$USER_PORT" -lt 1 ] || [ "$USER_PORT" -gt 65535 ]; then
-    echo -e "${YELLOW}输入无效，已自动重置为默认端口 3000${NC}"
+    echo -e "${YELLOW}⚠️  输入无效，系统自动重置端口为 3000${NC}"
     USER_PORT=3000
 fi
-echo -e "✅ 将使用端口: ${GREEN}${USER_PORT}${NC}"
+echo -e "✅ 目标端口锁定: ${CYAN}${USER_PORT}${NC}"
 
 # =================================================================
 # 1. 环境构建
 # =================================================================
-echo -e "\n${GREEN}[1/5] 准备运行环境...${NC}"
+echo -e "\n${GREEN}[1/5] 检测并构建运行环境...${NC}"
 
-apt-get update -y
-apt-get install -y curl gnupg2 ca-certificates lsb-release build-essential
+apt-get update -y >/dev/null 2>&1
+echo -e "📦 系统依赖库... ${GREEN}OK${NC}"
+apt-get install -y curl gnupg2 ca-certificates lsb-release build-essential >/dev/null 2>&1
 
+# 安装 Node.js (v20 LTS)
 if ! command -v node &> /dev/null; then
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt-get install -y nodejs
+    echo -e "⬇️  正在下载 Node.js v20..."
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null 2>&1
+    apt-get install -y nodejs >/dev/null 2>&1
 fi
+echo -e "🟢 Node.js 环境: ${GREEN}$(node -v)${NC}"
 
 # =================================================================
 # 2. 项目初始化
 # =================================================================
-echo -e "\n${GREEN}[2/5] 初始化应用目录...${NC}"
+echo -e "\n${GREEN}[2/5] 初始化神经网络节点 (App)...${NC}"
 PROJECT_DIR="/root/gemini-relay"
 mkdir -p "$PROJECT_DIR"
 cd "$PROJECT_DIR"
 
 if [ ! -f "package.json" ]; then npm init -y > /dev/null; fi
 
+# 修复启动命令和模块类型
 npm pkg set type="module"
 npm pkg set scripts.start="node index.js"
-npm install express ws cors
+echo -e "📦 安装核心依赖 (Express/WS)..."
+npm install express ws cors >/dev/null 2>&1
 
 # =================================================================
-# 3. 写入核心逻辑
+# 3. 写入核心逻辑 (含路由修复)
 # =================================================================
-echo -e "\n${GREEN}[3/5] 部署高性能核心代码...${NC}"
+echo -e "\n${GREEN}[3/5] 注入高性能逻辑核心...${NC}"
 
 cat > index.js << 'EOF'
 import express from 'express';
@@ -200,7 +232,8 @@ app.get('/', (req, res) => {
     });
 });
 
-app.post('/v1beta/*', (req, res) => {
+// 兼容性路由定义
+app.post('/v1beta/:path*', (req, res) => {
     const targetNode = getBestNode();
     if (!targetNode) return res.status(503).json({ error: { code: 503, message: 'No execution nodes.', status: 'UNAVAILABLE' } });
 
@@ -232,10 +265,9 @@ EOF
 # =================================================================
 # 4. 进程守护 (Systemd) - 动态路径注入
 # =================================================================
-echo -e "\n${GREEN}[4/5] 配置系统守护进程...${NC}"
+echo -e "\n${GREEN}[4/5] 配置系统守护精灵 (Daemon)...${NC}"
 
 SERVICE_FILE="/etc/systemd/system/gemini-relay.service"
-# 【关键修复】动态获取 npm 路径
 NPM_PATH=$(which npm)
 
 cat > "$SERVICE_FILE" << EOF
@@ -261,6 +293,8 @@ systemctl daemon-reload
 systemctl enable gemini-relay
 systemctl restart gemini-relay
 
+echo -e "✅ 核心服务状态: ${GREEN}Active${NC}"
+
 # =================================================================
 # 5. Ngrok 内网穿透 (可选) - 智能路径修复
 # =================================================================
@@ -271,28 +305,27 @@ echo "---------------------------------------------------------"
 read -p "是否启用 Ngrok 免费隧道? [y/N]: " use_ngrok
 
 if [[ "$use_ngrok" =~ ^[yY]$ ]]; then
-    echo -e "\n正在安装 Ngrok Client..."
+    echo -e "\n⬇️  正在安装 Ngrok Client..."
     
     curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
     echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | tee /etc/apt/sources.list.d/ngrok.list
-    apt-get update && apt-get install ngrok -y
+    apt-get update >/dev/null 2>&1
+    apt-get install ngrok -y >/dev/null 2>&1
 
     echo ""
     echo -e "${YELLOW}请前往: https://dashboard.ngrok.com/get-started/your-authtoken${NC}"
-    read -p "粘贴您的 Ngrok Authtoken: " ngrok_token
+    read -p "🔑 粘贴您的 Ngrok Authtoken: " ngrok_token
     
     if [ -z "$ngrok_token" ]; then
-        echo -e "${RED}Token 未输入，Ngrok 配置跳过。${NC}"
+        echo -e "${RED}❌ Token 未输入，Ngrok 配置跳过。${NC}"
     else
         ngrok config add-authtoken "$ngrok_token" >/dev/null 2>&1
         
         NGROK_SERVICE="/etc/systemd/system/ngrok-tunnel.service"
-        
-        # 【关键修复】动态获取 ngrok 真实路径
         NGROK_EXEC_PATH=$(which ngrok)
         
         if [ -z "$NGROK_EXEC_PATH" ]; then
-            echo -e "${RED}严重错误: 找不到 ngrok 可执行文件，请检查安装！${NC}"
+            echo -e "${RED}❌ 严重错误: 找不到 ngrok 可执行文件！${NC}"
         else
             cat > "$NGROK_SERVICE" << EOF
 [Unit]
@@ -313,19 +346,19 @@ EOF
             systemctl enable ngrok-tunnel
             systemctl restart ngrok-tunnel
             
-            echo -e "正在请求隧道地址..."
+            echo -e "⏳ 正在建立量子隧道..."
             sleep 5
             
             PUBLIC_URL=$(curl -s localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*' | grep -o 'https://[^"]*')
             
             if [ -n "$PUBLIC_URL" ]; then
                 echo ""
-                echo -e "${BLUE}==============================================${NC}"
-                echo -e "${GREEN}✅ 部署完成！${NC}"
-                echo -e "${BLUE}==============================================${NC}"
-                echo -e "Applet 连接地址 (WebSocket):"
-                echo -e "${YELLOW}${PUBLIC_URL/https/wss}/ws${NC}"
-                echo -e "${BLUE}==============================================${NC}"
+                echo -e "${PURPLE}==============================================${NC}"
+                echo -e "${GREEN}🎉 部署成功！所有系统已上线。${NC}"
+                echo -e "${PURPLE}==============================================${NC}"
+                echo -e "🔗 Applet 连接地址 (WebSocket):"
+                echo -e "${CYAN}${PUBLIC_URL/https/wss}/ws${NC}"
+                echo -e "${PURPLE}==============================================${NC}"
             else
                 echo -e "${RED}部署完成，但无法获取 Ngrok 地址。${NC}"
                 echo "请尝试手动运行: systemctl status ngrok-tunnel"
@@ -333,12 +366,12 @@ EOF
         fi
     fi
 else
-    echo -e "\n${GREEN}✅ 部署完成 (本地模式)${NC}"
-    echo "服务端口: ${USER_PORT}"
+    echo -e "\n${GREEN}🎉 部署成功 (本地模式)${NC}"
+    echo -e "🔹 服务端口: ${CYAN}${USER_PORT}${NC}"
 fi
 
-echo -e "\n管理命令:"
-echo "-------------------------------------"
-echo "重启服务: systemctl restart gemini-relay"
-echo "查看日志: journalctl -u gemini-relay -f"
-echo "-------------------------------------"
+echo -e "\n🔧 管理命令:"
+echo -e "${WHITE}-------------------------------------${NC}"
+echo -e "🔄 重启服务: ${YELLOW}systemctl restart gemini-relay${NC}"
+echo -e "📄 查看日志: ${YELLOW}journalctl -u gemini-relay -f${NC}"
+echo -e "${WHITE}-------------------------------------${NC}"
