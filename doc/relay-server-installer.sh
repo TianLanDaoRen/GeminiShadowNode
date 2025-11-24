@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =================================================================
-# Gemini Relay Server 一键部署脚本 (生产环境纯净版)
+# Gemini Relay Server 一键部署脚本 (自定义端口版 V3)
 # 作者: 云笥散人 | 架构优化: 世纪级全能技术宗师
 # =================================================================
 
@@ -20,25 +20,34 @@ fi
 
 clear
 echo -e "${BLUE}#########################################################${NC}"
-echo -e "${BLUE}#       Gemini Relay Server 一键部署 (Production)       #${NC}"
+echo -e "${BLUE}#   Gemini Relay Server Installer (Custom Port V3)      #${NC}"
 echo -e "${BLUE}#########################################################${NC}"
 echo ""
-echo -e "${YELLOW}警告: 执行此脚本将修改系统服务配置。${NC}"
-echo -e "${YELLOW}作者与优化者不对因使用此脚本导致的任何损失负责。${NC}"
-echo ""
 
-read -p "是否已知晓风险并继续? (请输入 y): " consent
-if [[ "$consent" != "y" ]]; then
-    echo "操作已取消。"
-    exit 0
+read -p "是否继续安装? (y/n): " consent
+if [[ "$consent" != "y" ]]; then exit 0; fi
+
+# =================================================================
+# 0. 配置参数 (新增)
+# =================================================================
+echo -e "\n${GREEN}[0/5] 配置服务参数...${NC}"
+
+read -p "请输入服务监听端口 [默认 3000]: " USER_PORT
+USER_PORT=${USER_PORT:-3000}
+
+# 端口合法性校验 (正则: 纯数字且在 1-65535 之间)
+if ! [[ "$USER_PORT" =~ ^[0-9]+$ ]] || [ "$USER_PORT" -lt 1 ] || [ "$USER_PORT" -gt 65535 ]; then
+    echo -e "${YELLOW}输入无效，已自动重置为默认端口 3000${NC}"
+    USER_PORT=3000
 fi
+
+echo -e "✅ 将使用端口: ${GREEN}${USER_PORT}${NC}"
 
 # =================================================================
 # 1. 环境构建
 # =================================================================
 echo -e "\n${GREEN}[1/5] 准备运行环境...${NC}"
 
-# 安装系统级依赖
 apt-get update -y
 apt-get install -y curl gnupg2 ca-certificates lsb-release build-essential
 
@@ -46,8 +55,6 @@ apt-get install -y curl gnupg2 ca-certificates lsb-release build-essential
 if ! command -v node &> /dev/null; then
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
     apt-get install -y nodejs
-else
-    echo "Node.js 已安装: $(node -v)"
 fi
 
 # =================================================================
@@ -59,14 +66,20 @@ mkdir -p "$PROJECT_DIR"
 cd "$PROJECT_DIR"
 
 if [ ! -f "package.json" ]; then npm init -y > /dev/null; fi
+
+# 显式设置启动命令和模块类型
 npm pkg set type="module"
+npm pkg set scripts.start="node index.js"
+
+# 安装依赖
 npm install express ws cors
 
 # =================================================================
-# 3. 写入核心逻辑 (Clean Version)
+# 3. 写入核心逻辑
 # =================================================================
 echo -e "\n${GREEN}[3/5] 部署高性能核心代码...${NC}"
 
+# index.js 代码无需改动，它会自动读取 process.env.PORT
 cat > index.js << 'EOF'
 import express from 'express';
 import http from 'http';
@@ -90,11 +103,9 @@ function broadcastClusterStatus() {
     appletPool.forEach(c => { if (c.readyState === WebSocket.OPEN) c.send(msg); });
 }
 
-// 心跳检测
 const interval = setInterval(() => {
     appletPool.forEach((ws) => {
         if (ws.isAlive === false) {
-            // 正在工作的节点豁免被杀
             if (ws.pendingTasks > 0) { ws.ping(); return; }
             return ws.terminate();
         }
@@ -120,7 +131,7 @@ wss.on('connection', (ws) => {
         ws.isAlive = true;
         try {
             const msgString = message.toString();
-            if (msgString.trim().toLowerCase().startsWith('p')) return; // 忽略 ping 包
+            if (msgString.trim().toLowerCase().startsWith('p')) return; 
 
             const { id, success, payload, error } = JSON.parse(msgString);
 
@@ -139,7 +150,6 @@ wss.on('connection', (ws) => {
         }
     });
 
-    // 关键：断连故障转移逻辑
     ws.on('close', () => {
         appletPool.delete(ws);
         for (const [id, reqData] of pendingRequests.entries()) {
@@ -162,7 +172,6 @@ wss.on('connection', (ws) => {
     ws.on('error', (err) => console.error(`[${ws.nodeId}] Error:`, err.message));
 });
 
-// LRU 调度算法
 function getBestNode() {
     let bestNode = null;
     let minLoad = Infinity;
@@ -229,7 +238,7 @@ server.listen(PORT, () => console.log(`Server running on ${PORT}`));
 EOF
 
 # =================================================================
-# 4. 进程守护 (Systemd)
+# 4. 进程守护 (Systemd) - 动态端口注入
 # =================================================================
 echo -e "\n${GREEN}[4/5] 配置系统守护进程...${NC}"
 
@@ -249,6 +258,7 @@ ExecStart=$NPM_PATH start
 Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
+Environment=PORT=$USER_PORT
 
 [Install]
 WantedBy=multi-user.target
@@ -259,7 +269,7 @@ systemctl enable gemini-relay
 systemctl restart gemini-relay
 
 # =================================================================
-# 5. Ngrok 内网穿透 (可选)
+# 5. Ngrok 内网穿透 (可选) - 动态端口适配
 # =================================================================
 echo -e "\n${GREEN}[5/5] 网络接入配置${NC}"
 echo "---------------------------------------------------------"
@@ -270,7 +280,6 @@ read -p "是否启用 Ngrok 免费隧道? [y/N]: " use_ngrok
 if [[ "$use_ngrok" =~ ^[yY]$ ]]; then
     echo -e "\n正在安装 Ngrok Client..."
     
-    # 官方安装源
     curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
     echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | tee /etc/apt/sources.list.d/ngrok.list
     apt-get update && apt-get install ngrok -y
@@ -284,8 +293,8 @@ if [[ "$use_ngrok" =~ ^[yY]$ ]]; then
     else
         ngrok config add-authtoken "$ngrok_token" >/dev/null 2>&1
         
-        # 配置 Ngrok 守护进程
         NGROK_SERVICE="/etc/systemd/system/ngrok-tunnel.service"
+        # 注意：这里动态使用了 $USER_PORT
         cat > "$NGROK_SERVICE" << EOF
 [Unit]
 Description=Ngrok Tunnel
@@ -294,7 +303,7 @@ After=network.target gemini-relay.service
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/bin/ngrok http 3000 --log=stdout
+ExecStart=/usr/bin/ngrok http $USER_PORT --log=stdout
 Restart=always
 RestartSec=10
 
@@ -308,7 +317,6 @@ EOF
         echo -e "正在请求隧道地址..."
         sleep 5
         
-        # 动态抓取公网地址
         PUBLIC_URL=$(curl -s localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*' | grep -o 'https://[^"]*')
         
         if [ -n "$PUBLIC_URL" ]; then
@@ -326,8 +334,8 @@ EOF
     fi
 else
     echo -e "\n${GREEN}✅ 部署完成 (本地模式)${NC}"
-    echo "服务端口: 3000"
-    echo "请配置 Nginx 反代或放行防火墙端口。"
+    echo "服务端口: ${USER_PORT}"
+    echo "请自行配置防火墙规则放行 TCP/${USER_PORT}。"
 fi
 
 echo -e "\n管理命令:"
