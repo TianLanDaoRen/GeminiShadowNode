@@ -38,7 +38,7 @@ EOF
 echo -e "${NC}"
 echo -e "${PURPLE}=========================================================${NC}"
 echo -e "${YELLOW} ⚡ 原创作者    : ${WHITE}云笥散人${NC}"
-echo -e "${YELLOW} 🧠 架构师    : ${WHITE}Gemini 3.0 Pro${NC}"
+echo -e "${YELLOW} 🧠 架构宗师    : ${WHITE}Gemini 3.0 Pro${NC}"
 echo -e "${YELLOW} 🛠  版本号      : ${GREEN}Ultimate V6 (Production Ready)${NC}"
 echo -e "${PURPLE}=========================================================${NC}"
 echo -e "${BLUE} 正在初始化量子连接...${NC}"
@@ -100,7 +100,7 @@ echo -e "📦 安装核心依赖 (Express/WS)..."
 npm install express ws cors >/dev/null 2>&1
 
 # =================================================================
-# 3. 写入核心逻辑 (含路由修复)
+# 3. 写入核心逻辑 (正则路由修复版)
 # =================================================================
 echo -e "\n${GREEN}[3/5] 注入高性能逻辑核心...${NC}"
 
@@ -232,8 +232,9 @@ app.get('/', (req, res) => {
     });
 });
 
-// 兼容性路由定义
-app.post('/v1beta/:path*', (req, res) => {
+// 【技术宗师修复】使用正则路由 (Regex) 替代字符串路由
+// 这能彻底绕过 path-to-regexp 库的版本兼容性问题
+app.post(/\/v1beta\/.*/, (req, res) => {
     const targetNode = getBestNode();
     if (!targetNode) return res.status(503).json({ error: { code: 503, message: 'No execution nodes.', status: 'UNAVAILABLE' } });
 
