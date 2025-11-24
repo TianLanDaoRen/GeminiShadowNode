@@ -262,7 +262,7 @@
         });
 
         // ================= 配置 =================
-        const API_BASE = 'https://myriadly-steplike-lynwood.ngrok-free.dev/v1beta/models';
+        const API_BASE = 'https://your-site/v1beta/models';
 
         // 上下文历史 (Chat History)
         let chatHistory = [];
@@ -584,6 +584,7 @@
 
 </html>
 ```
+> 注意：您应该将 `const API_BASE = 'https://your-site/v1beta/models';`  中的 `your-site` 替换为您自己的中转服务域名。
 
 ---
 
