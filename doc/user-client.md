@@ -13,10 +13,10 @@
 
 ### ✨ 关键特性
 
-1.  **多模态支持 (Multi-modal)**: 支持上传图片。客户端负责将图片文件转换为 **Base64** 编码，并封装为标准的 `inlineData` 格式。
-2.  **上下文记忆 (Context-Aware)**: 客户端在本地维护 `chatHistory` 数组。每次请求都会将之前的对话历史一并打包发送，实现连续对话。
-3.  **压力测试 (Stress Test)**: 内置并发请求生成器，用于测试 VPS、Nginx 和 Node.js 队列在高负载下的稳定性。
-4.  **Markdown 渲染**: 集成了 `marked.js`，支持代码高亮、表格渲染和 GitHub 风格换行。
+1. **多模态支持 (Multi-modal)**: 支持上传图片。客户端负责将图片文件转换为 **Base64** 编码，并封装为标准的 `inlineData` 格式。
+2. **上下文记忆 (Context-Aware)**: 客户端在本地维护 `chatHistory` 数组。每次请求都会将之前的对话历史一并打包发送，实现连续对话。
+3. **压力测试 (Stress Test)**: 内置并发请求生成器，用于测试 VPS、Nginx 和 Node.js 队列在高负载下的稳定性。
+4. **Markdown 渲染**: 集成了 `marked.js`，支持代码高亮、表格渲染和 GitHub 风格换行。
 
 ---
 
@@ -26,8 +26,8 @@
 
 客户端通过动态修改 URL 路径来切换模型。中转服务器捕获此路径并转发给 Applet。
 
-*   **URL 模板**: `https://{你的域名}/v1beta/models/{模型名称}:generateContent`
-*   **示例**: `https://your-site.com/v1beta/models/gemini-2.0-flash-exp:generateContent`
+* **URL 模板**: `https://{你的域名}/v1beta/models/{模型名称}:generateContent`
+* **示例**: `https://your-site.com/v1beta/models/gemini-2.0-flash-exp:generateContent`
 
 ### 2. 请求体结构 (JSON Body)
 
@@ -262,7 +262,7 @@
         });
 
         // ================= 配置 =================
-        const API_BASE = 'https://your-site.com/v1beta/models';
+        const API_BASE = 'https://myriadly-steplike-lynwood.ngrok-free.dev/v1beta/models';
 
         // 上下文历史 (Chat History)
         let chatHistory = [];
@@ -373,6 +373,7 @@
 
             // 添加 Loading 气泡
             const loadingId = appendLoading();
+            const mytools = model.includes("image") ? [] : [{ googleSearch: {} }];
 
             try {
                 // 发送请求
@@ -382,7 +383,7 @@
                     body: JSON.stringify({
                         contents: chatHistory, // 发送完整历史
                         // 【新增】注入 Google 搜索工具
-                        tools: [{ googleSearch: {} }],
+                        tools: mytools,
                         generationConfig: { temperature: 0.7 }
                     })
                 });
@@ -583,6 +584,7 @@
 
 </html>
 ```
+
 ---
 
 ## 步骤 2: 运行与测试
@@ -590,9 +592,11 @@
 您不需要安装任何额外的 Node.js 依赖来运行这个客户端。
 
 ### 方法 A: 直接打开 (最简单)
+
 直接在您的文件管理器中双击 `index.html` 文件，或者将其拖入 **Chrome** 或 **Edge** 浏览器中。
 
 ### 方法 B: 使用本地服务器 (推荐)
+
 为了获得最佳体验（并避免某些浏览器严格的 `file://` 协议跨域限制），建议使用 VS Code 的 **Live Server** 插件，或者在终端运行：
 
 ```bash
@@ -606,33 +610,37 @@ python3 -m http.server 8000
 ## 步骤 3: 功能操作指南
 
 ### 1. 基础对话
-*   在输入框输入文本，按 `Ctrl + Enter` (或 `Cmd + Enter`) 发送。
-*   AI 的回复支持 **Markdown** 渲染，包括代码块高亮和表格。
+
+* 在输入框输入文本，按 `Ctrl + Enter` (或 `Cmd + Enter`) 发送。
+* AI 的回复支持 **Markdown** 渲染，包括代码块高亮和表格。
 
 ### 2. 图片理解 (多模态)
-*   点击输入框左侧的 **📎 (回形针)** 图标，选择一张或多张图片。
-*   输入提示词（例如：“提取图片中的文字”），然后发送。
-*   客户端会自动将图片转换为 Base64 并通过中转服务器发送给 Applet。
+
+* 点击输入框左侧的 **📎 (回形针)** 图标，选择一张或多张图片。
+* 输入提示词（例如：“提取图片中的文字”），然后发送。
+* 客户端会自动将图片转换为 Base64 并通过中转服务器发送给 Applet。
 
 ### 3. 上下文连续对话
-*   无需任何设置，客户端会自动记录您的聊天历史。
-*   您可以像与 ChatGPT 聊天一样进行追问。
-*   点击顶部的 **“🗑️ 清除上下文”** 按钮可以重置记忆，开始新话题。
+
+* 无需任何设置，客户端会自动记录您的聊天历史。
+* 您可以像与 ChatGPT 聊天一样进行追问。
+* 点击顶部的 **“🗑️ 清除上下文”** 按钮可以重置记忆，开始新话题。
 
 ### 4. 压力测试 (Stress Test)
-*   点击顶部的 **“⚡ 压力测试”** 按钮打开控制面板。
-*   设置并发数量（建议从 5 开始）。
-*   点击 **“🚀 发射”**。
-*   观察下方的日志面板，如果所有请求都返回 `Status: 200`，说明您的 **Shadow Node** 架构坚如磐石。
+
+* 点击顶部的 **“⚡ 压力测试”** 按钮打开控制面板。
+* 设置并发数量（建议从 5 开始）。
+* 点击 **“🚀 发射”**。
+* 观察下方的日志面板，如果所有请求都返回 `Status: 200`，说明您的 **Shadow Node** 架构坚如磐石。
 
 ---
 
 ## 常见问题排查
 
-*   **请求一直转圈不返回**:
-    *   检查 AiStudio 的 Gemini Shadow Node Applet 是否已连接。
-    *   检查是否触发了 Nginx 的 60秒超时（我们配置了 300s，通常够用）。
-*   **图片发送失败**:
-    *   虽然服务器支持 512MB，但浏览器端处理超大图片（如 10MB+ 原图）可能导致卡顿。建议发送前适当压缩图片。
-*   **CORS 跨域错误**:
-    *   确保您的 Nginx 配置或 Node.js 代码中包含了 `cors` 中间件（我们的 `relay-server` 已包含）。
+* **请求一直转圈不返回**:
+  * 检查 AiStudio 的 Gemini Shadow Node Applet 是否已连接。
+  * 检查是否触发了 Nginx 的 60秒超时（我们配置了 300s，通常够用）。
+* **图片发送失败**:
+  * 虽然服务器支持 512MB，但浏览器端处理超大图片（如 10MB+ 原图）可能导致卡顿。建议发送前适当压缩图片。
+* **CORS 跨域错误**:
+  * 确保您的 Nginx 配置或 Node.js 代码中包含了 `cors` 中间件（我们的 `relay-server` 已包含）。
