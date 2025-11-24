@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =================================================================
-# Gemini Relay Server 一键部署脚本 (自定义端口版 V3)
+# Gemini Relay Server Installer (Smart Path V4)
 # 作者: 云笥散人 | 架构优化: 世纪级全能技术宗师
 # =================================================================
 
@@ -12,7 +12,6 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# 检查 Root 权限
 if [ "$EUID" -ne 0 ]; then
   echo -e "${RED}错误: 请使用 root 权限运行 (sudo -i)。${NC}"
   exit 1
@@ -20,7 +19,7 @@ fi
 
 clear
 echo -e "${BLUE}#########################################################${NC}"
-echo -e "${BLUE}#   Gemini Relay Server Installer (Custom Port V3)      #${NC}"
+echo -e "${BLUE}#    Gemini Relay Server Installer (Smart V4)           #${NC}"
 echo -e "${BLUE}#########################################################${NC}"
 echo ""
 
@@ -28,19 +27,17 @@ read -p "是否继续安装? (y/n): " consent
 if [[ "$consent" != "y" ]]; then exit 0; fi
 
 # =================================================================
-# 0. 配置参数 (新增)
+# 0. 配置参数
 # =================================================================
 echo -e "\n${GREEN}[0/5] 配置服务参数...${NC}"
 
 read -p "请输入服务监听端口 [默认 3000]: " USER_PORT
 USER_PORT=${USER_PORT:-3000}
 
-# 端口合法性校验 (正则: 纯数字且在 1-65535 之间)
 if ! [[ "$USER_PORT" =~ ^[0-9]+$ ]] || [ "$USER_PORT" -lt 1 ] || [ "$USER_PORT" -gt 65535 ]; then
     echo -e "${YELLOW}输入无效，已自动重置为默认端口 3000${NC}"
     USER_PORT=3000
 fi
-
 echo -e "✅ 将使用端口: ${GREEN}${USER_PORT}${NC}"
 
 # =================================================================
@@ -51,7 +48,6 @@ echo -e "\n${GREEN}[1/5] 准备运行环境...${NC}"
 apt-get update -y
 apt-get install -y curl gnupg2 ca-certificates lsb-release build-essential
 
-# 安装 Node.js (v20 LTS)
 if ! command -v node &> /dev/null; then
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
     apt-get install -y nodejs
@@ -67,11 +63,8 @@ cd "$PROJECT_DIR"
 
 if [ ! -f "package.json" ]; then npm init -y > /dev/null; fi
 
-# 显式设置启动命令和模块类型
 npm pkg set type="module"
 npm pkg set scripts.start="node index.js"
-
-# 安装依赖
 npm install express ws cors
 
 # =================================================================
@@ -79,7 +72,6 @@ npm install express ws cors
 # =================================================================
 echo -e "\n${GREEN}[3/5] 部署高性能核心代码...${NC}"
 
-# index.js 代码无需改动，它会自动读取 process.env.PORT
 cat > index.js << 'EOF'
 import express from 'express';
 import http from 'http';
@@ -238,11 +230,12 @@ server.listen(PORT, () => console.log(`Server running on ${PORT}`));
 EOF
 
 # =================================================================
-# 4. 进程守护 (Systemd) - 动态端口注入
+# 4. 进程守护 (Systemd) - 动态路径注入
 # =================================================================
 echo -e "\n${GREEN}[4/5] 配置系统守护进程...${NC}"
 
 SERVICE_FILE="/etc/systemd/system/gemini-relay.service"
+# 【关键修复】动态获取 npm 路径
 NPM_PATH=$(which npm)
 
 cat > "$SERVICE_FILE" << EOF
@@ -269,7 +262,7 @@ systemctl enable gemini-relay
 systemctl restart gemini-relay
 
 # =================================================================
-# 5. Ngrok 内网穿透 (可选) - 动态端口适配
+# 5. Ngrok 内网穿透 (可选) - 智能路径修复
 # =================================================================
 echo -e "\n${GREEN}[5/5] 网络接入配置${NC}"
 echo "---------------------------------------------------------"
@@ -294,8 +287,14 @@ if [[ "$use_ngrok" =~ ^[yY]$ ]]; then
         ngrok config add-authtoken "$ngrok_token" >/dev/null 2>&1
         
         NGROK_SERVICE="/etc/systemd/system/ngrok-tunnel.service"
-        # 注意：这里动态使用了 $USER_PORT
-        cat > "$NGROK_SERVICE" << EOF
+        
+        # 【关键修复】动态获取 ngrok 真实路径
+        NGROK_EXEC_PATH=$(which ngrok)
+        
+        if [ -z "$NGROK_EXEC_PATH" ]; then
+            echo -e "${RED}严重错误: 找不到 ngrok 可执行文件，请检查安装！${NC}"
+        else
+            cat > "$NGROK_SERVICE" << EOF
 [Unit]
 Description=Ngrok Tunnel
 After=network.target gemini-relay.service
@@ -303,39 +302,39 @@ After=network.target gemini-relay.service
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/bin/ngrok http $USER_PORT --log=stdout
+ExecStart=$NGROK_EXEC_PATH http $USER_PORT --log=stdout
 Restart=always
 RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
 EOF
-        systemctl daemon-reload
-        systemctl enable ngrok-tunnel
-        systemctl restart ngrok-tunnel
-        
-        echo -e "正在请求隧道地址..."
-        sleep 5
-        
-        PUBLIC_URL=$(curl -s localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*' | grep -o 'https://[^"]*')
-        
-        if [ -n "$PUBLIC_URL" ]; then
-            echo ""
-            echo -e "${BLUE}==============================================${NC}"
-            echo -e "${GREEN}✅ 部署完成！${NC}"
-            echo -e "${BLUE}==============================================${NC}"
-            echo -e "Applet 连接地址 (WebSocket):"
-            echo -e "${YELLOW}${PUBLIC_URL/https/wss}/ws${NC}"
-            echo -e "${BLUE}==============================================${NC}"
-        else
-            echo -e "${RED}部署完成，但无法获取 Ngrok 地址。${NC}"
-            echo "请尝试手动运行: systemctl status ngrok-tunnel"
+            systemctl daemon-reload
+            systemctl enable ngrok-tunnel
+            systemctl restart ngrok-tunnel
+            
+            echo -e "正在请求隧道地址..."
+            sleep 5
+            
+            PUBLIC_URL=$(curl -s localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*' | grep -o 'https://[^"]*')
+            
+            if [ -n "$PUBLIC_URL" ]; then
+                echo ""
+                echo -e "${BLUE}==============================================${NC}"
+                echo -e "${GREEN}✅ 部署完成！${NC}"
+                echo -e "${BLUE}==============================================${NC}"
+                echo -e "Applet 连接地址 (WebSocket):"
+                echo -e "${YELLOW}${PUBLIC_URL/https/wss}/ws${NC}"
+                echo -e "${BLUE}==============================================${NC}"
+            else
+                echo -e "${RED}部署完成，但无法获取 Ngrok 地址。${NC}"
+                echo "请尝试手动运行: systemctl status ngrok-tunnel"
+            fi
         fi
     fi
 else
     echo -e "\n${GREEN}✅ 部署完成 (本地模式)${NC}"
     echo "服务端口: ${USER_PORT}"
-    echo "请自行配置防火墙规则放行 TCP/${USER_PORT}。"
 fi
 
 echo -e "\n管理命令:"
