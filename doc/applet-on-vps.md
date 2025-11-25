@@ -93,8 +93,10 @@ ssh -L 5901:127.0.0.1:5901 root@47.94.163.166
 ```
 
 *解释：这句话的意思是“把我本地电脑的 5901 端口，通过 SSH 隧道，映射到服务器的 127.0.0.1:5901”。*
+
 2.  **登录服务器**：
 命令回车后，输入服务器密码登录 SSH。保持这个终端窗口**不要关闭**（最小化即可）。
+
 3.  **修改 VNC Viewer 的连接地址**：
 打开你的 RealVNC Viewer，新建一个连接（或者修改旧的）：
 
@@ -124,11 +126,12 @@ https://aistudio.google.com/apps/drive/12GIiVhqKfPj1NIj-aD8crTsI2WYUmuER?fullscr
 * `--disable-gpu`：VPS 没有显卡，关掉它省资源。
 * `--disable-dev-shm-usage`：**极重要**。防止 `/dev/shm`（共享内存，通常较小）爆满导致浏览器崩溃，强制它使用 `/tmp`（硬盘空间）。
 * `--renderer-process-limit=2`：**核心优化**。限制渲染进程的数量。默认情况下 Chrome 每个标签页一个进程，这会吃光你的 2G 内存。限制为 2 可以强迫多个标签页共用进程，极大地节省内存。
-* `--proxy-server="http://127.0.0.1:20171"`: 设置代理服务器地址为服务器的中转服务端口，比如V2rayA默认端口20171（请根据你自己的中转服务端口修改）。若您的VPS可以直连Google，则去掉此参数。
+* `--proxy-server="http://127.0.0.1:20171"`: 设置魔法工具地址，比如V2rayA默认端口20171（请根据你自己使用的魔法工具端口修改）。若您的VPS可以直连Google，则去掉此参数。
 
 #### 若出现报错 `Client is not authorized to connect to Server`
 
 ![](img/fail.png "报错截图")
+
 请先运行以下命令再使用上面命令启动浏览器：
 
 ```bash
