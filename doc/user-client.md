@@ -428,7 +428,7 @@
     <script>
         // ================= 初始化 =================
         marked.use({ breaks: true, gfm: true });
-        const API_BASE = 'https://yunsisanren.top/v1beta/models';
+        const API_BASE = 'https://your-site.top/v1beta/models';
         let chatHistory = [];
         let pendingImages = [];
 
