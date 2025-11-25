@@ -19,6 +19,8 @@ export class AppComponent implements OnInit, OnDestroy {
   
   // 日志仅保留最新的 50 条，防止 DOM 节点过多消耗内存
   logs = signal<string[]>([]);
+  // 暴露给模板
+  bufferInterval = this.proxyService.bufferInterval;
   
   connectionStatus = this.proxyService.connectionStatus;
   nodeCount = this.proxyService.nodeCount;
@@ -68,6 +70,13 @@ export class AppComponent implements OnInit, OnDestroy {
   updateRelayUrl(event: Event): void {
     const target = event.target as HTMLInputElement;
     this.relayUrl.set(target.value);
+  }
+
+  // 【新增】处理滑动条变化
+  updateBufferInterval(event: Event) {
+    const target = event.target as HTMLInputElement;
+    const val = parseInt(target.value, 10);
+    this.proxyService.setBufferInterval(val);
   }
 
   /**
