@@ -590,7 +590,7 @@
                         const skeleton = container.querySelector('.image-skeleton');
                         if (skeleton) skeleton.textContent = 'Generation Finished (No Image)';
                     }
-                    updateAiText(aiMsgDiv, fullText, true);
+                    updateAiText(container, fullText, true);
                 } else {
                     // === 非流式处理 ===
                     const data = await response.json();
@@ -605,15 +605,15 @@
                     });
 
                     // 一次性渲染
-                    if (thinkingText) updateAiThinking(aiMsgDiv, thinkingText);
-                    updateAiText(aiMsgDiv, fullText, true);
+                    if (thinkingText) updateAiThinking(container, thinkingText);
+                    updateAiText(container, fullText, true);
                 }
 
                 // 保存历史 (文本部分)
                 if (fullText) chatHistory.push({ role: 'model', parts: [{ text: fullText }] });
 
             } catch (error) {
-                updateAiText(aiMsgDiv, fullText + `\n\n**Error:** ${error.message}`, true);
+                updateAiText(container, fullText + `\n\n**Error:** ${error.message}`, true);
                 // 如果出错，移除骨架屏
                 const skeleton = container.querySelector('.image-skeleton');
                 if (skeleton) skeleton.remove();
