@@ -142,7 +142,6 @@ export class GeminiService {
           // 【关键】不再需要 cleanGenerationConfig，直接对整个 body 做清洗
           // 我们只分离出 contents，剩下的所有参数都扔给 toCamelCaseRecursive
           const { contents, ...restOfBody } = body;
-          console.log(body);
           
           const normalizedContents = this.normalizeContents(contents);
 
@@ -166,7 +165,6 @@ export class GeminiService {
               contents: normalizedContents,
               config: finalConfig // 所有配置项都在这里！
           };
-          console.log(sdkParams);
 
           if (isStreaming) {
               await this.processStream(id, sdkParams);
