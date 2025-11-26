@@ -23,8 +23,6 @@ export class GeminiService {
   private reconnectTimer: any = null;
   private readonly RECONNECT_DELAY = 3000;
   
-  // 【新特性】流式缓冲配置：每 500ms 发送一次，平衡体验与负载
-  private readonly STREAM_BUFFER_INTERVAL = 500; 
   // 【新增】流式缓冲间隔信号 (默认 500ms)
   bufferInterval = signal<number>(500);
 
@@ -141,15 +139,39 @@ export class GeminiService {
           const modelName = this.extractModelName(path);
           
           // 【关键步骤】全能参数清洗：snake_case -> camelCase
-          // 这样就不用担心 inline_data 或 stop_sequences 报错了
-          const cleanBody = this.normalizeRequestBody(body);
+          // 【关键】不再需要 cleanGenerationConfig，直接对整个 body 做清洗
+          // 我们只分离出 contents，剩下的所有参数都扔给 toCamelCaseRecursive
+          const { contents, ...restOfBody } = body;
+          console.log(body);
+          
+          const normalizedContents = this.normalizeContents(contents);
+
+          const normalizedConfigItems = this.toCamelCaseRecursive(restOfBody);
+          //【新增】类型校准 (防御性编程)
+          // 这一步确保了 tools 和 safetySettings 永远是数组
+          const sanitizedConfigItems = this.sanitizeSdkConfig(normalizedConfigItems);
+
+          // 从转换后的配置项中，提取出 generationConfig，剩下的就是 tools, safetySettings 等
+          const { generationConfig, ...otherConfigs } = sanitizedConfigItems;
+
+          // 将 generationConfig 里的属性 与其他配置项 合并成一个大的 config 对象
+          const finalConfig = {
+              ...(generationConfig || {}), // 展开 temperature, maxOutputTokens 等
+              ...otherConfigs              // 展开 tools, safetySettings 等
+          };
+
+          // 重新组装成 SDK 需要的参数对象
+          const sdkParams = {
+              model: modelName,
+              contents: normalizedContents,
+              config: finalConfig // 所有配置项都在这里！
+          };
+          console.log(sdkParams);
 
           if (isStreaming) {
-              // 【新特性】进入流式处理模式
-              await this.processStream(id, modelName, cleanBody);
+              await this.processStream(id, sdkParams);
           } else {
-              // 原有普通模式
-              const result = await this.generateContent(modelName, cleanBody);
+              const result = await this.generateContent(sdkParams);
               this.sendMessage({ id, success: true, payload: result });
           }
           
@@ -161,13 +183,9 @@ export class GeminiService {
   }
 
   // --- 【核心升级】流式缓冲处理器 (原生对象透传版) ---
-  private async processStream(id: string, model: string, body: any) {
+  private async processStream(id: string, sdkParams: any) {
       try {
-          const response = await this.ai.models.generateContentStream({
-              model: model,
-              contents: body.contents,
-              config: body.generationConfig
-          });
+          const response = await this.ai.models.generateContentStream(sdkParams);
 
           // 兼容性处理
           let streamIterable = (response as any).stream;
@@ -228,34 +246,6 @@ export class GeminiService {
       });
   }
 
-  // 【新增】手动从 Chunk 对象中提取文本
-  private extractTextFromChunk(chunk: any): string {
-      // 结构通常是: chunk.candidates[0].content.parts[0].text
-      try {
-          const candidate = chunk.candidates?.[0];
-          const parts = candidate?.content?.parts;
-          
-          if (parts && Array.isArray(parts)) {
-              // 把所有 part 的 text 拼起来 (通常只有一个)
-              return parts.map((p: any) => p.text || '').join('');
-          }
-      } catch (e) {
-          // 忽略解析错误，防止中断流
-      }
-      return '';
-  }
-
-  // 发送流式片段的辅助函数
-  private sendStreamChunk(id: string, text: string) {
-      // 定义流式协议格式：type: 'chunk'
-      this.sendMessage({
-          id,
-          stream: true,
-          type: 'chunk',
-          content: text
-      });
-  }
-
   // --- 【核心升级】全能参数清洗器 ---
   private normalizeRequestBody(body: any): any {
       // 1. 先处理 contents 里的 inlineData (因为这个最特殊)
@@ -291,12 +281,8 @@ export class GeminiService {
   }
 
   // 普通生成 (非流式)
-  async generateContent(model: string, body: any): Promise<any> {
-      const response = await this.ai.models.generateContent({
-          model: model,
-          contents: body.contents,
-          config: body.generationConfig // 此时已经是驼峰了
-      });
+  async generateContent(sdkParams: any): Promise<any> {
+      const response = await this.ai.models.generateContent(sdkParams);
       const plainResponse = JSON.parse(JSON.stringify(response));
       if (plainResponse.sdkHttpResponse) delete plainResponse.sdkHttpResponse;
       return plainResponse;
@@ -393,5 +379,23 @@ export class GeminiService {
       });
       return { ...content, parts: newParts };
     });
+  }
+
+  // 【新增】协议校准官：强制修正数据类型
+  private sanitizeSdkConfig(config: any): any {
+      if (!config || typeof config !== 'object') return config;
+      
+      // 定义哪些字段必须是数组
+      const arrayKeys = ['tools', 'safetySettings'];
+      const sanitized = { ...config }; // 在副本上操作
+
+      for (const key of arrayKeys) {
+          if (sanitized[key] && !Array.isArray(sanitized[key])) {
+              console.warn(`[Sanitizer] Correcting non-array '${key}' field from a non-compliant client.`);
+              // 强制包装成数组
+              sanitized[key] = [sanitized[key]];
+          }
+      }
+      return sanitized;
   }
 }
