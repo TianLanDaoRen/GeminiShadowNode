@@ -125,7 +125,7 @@ https://aistudio.google.com/apps/drive/12GIiVhqKfPj1NIj-aD8crTsI2WYUmuER?fullscr
 * `--no-sandbox`：root 用户运行必需。
 * `--disable-gpu`：VPS 没有显卡，关掉它省资源。
 * `--disable-dev-shm-usage`：**极重要**。防止 `/dev/shm`（共享内存，通常较小）爆满导致浏览器崩溃，强制它使用 `/tmp`（硬盘空间）。
-* `--renderer-process-limit=2`：**核心优化**。限制渲染进程的数量。默认情况下 Chrome 每个标签页一个进程，这会吃光你的 2G 内存。限制为 2 可以强迫多个标签页共用进程，极大地节省内存。
+* `--renderer-process-limit=2`：**核心优化**。限制渲染进程的数量。默认情况下 Chrome 每个标签页一个进程，这会吃光你的 2G 内存。限制为 2 可以强迫多个标签页共用进程，极大地节省内存。（但是，可能会造成浏览器卡顿，兄弟们可以分别测试一下使用此参数和不使用哪个更适合你的VPS！）
 * `--proxy-server="http://127.0.0.1:20171"`: 设置魔法工具地址，比如V2rayA默认端口20171（请根据你自己使用的魔法工具端口修改）。若您的VPS可以直连Google，则去掉此参数。
 
 #### 若出现报错 `Client is not authorized to connect to Server`
