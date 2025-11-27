@@ -94,25 +94,40 @@ export class GeminiService {
         }
     }
 
+    // --- 【核心升级】API 路由分发 ---
     private async handleIncomingMessage(message: any) {
-        if (message === 'ping' || message.type === 'ping') return;
-
-        if (message && message.type === 'cluster_sync') {
+        if (message?.type === 'cluster_sync') {
             this.nodeCount.set(message.count);
             return;
         }
 
         if (message && message.id && message.path) {
-            // 1. 处理 GET Models
-            if (message.method === 'GET' && message.path.includes('/models')) {
-                this.handleListModels(message.id);
-                return;
-            }
-
-            // 2. 处理生成请求 (POST)
-            if (message.body) {
-                this.handleGenerateRequest(message);
-            }
+        const path = message.path;
+        
+        // 1. 模型列表 (GET)
+        if (message.method === 'GET' && path.includes('/models')) {
+            this.handleListModels(message.id);
+        } 
+        // 2. 内容生成 (POST)
+        else if (path.includes(':generateContent') || path.includes(':streamGenerateContent')) {
+            this.handleGenerateRequest(message);
+        }
+        // 3. 【新增】嵌入 (Embedding - POST)
+        else if (path.includes(':embedContent')) {
+            this.handleEmbedRequest(message, false); // false = not batch
+        }
+        // 4. 【新增】批量嵌入 (Batch Embedding - POST)
+        else if (path.includes(':batchEmbedContent')) {
+            this.handleEmbedRequest(message, true); // true = batch
+        }
+        // ... 可以在这里添加更多 API 路由
+        else {
+            this.sendMessage({ 
+                id: message.id, 
+                success: false, 
+                error: `Unsupported API endpoint: ${path}` 
+            });
+        }
         }
     }
 
@@ -183,6 +198,78 @@ export class GeminiService {
         }
     }
 
+    // --- 【终极修正】Embedding 请求处理器 (原生SDK兼容版) ---
+    private async handleEmbedRequest(message: any, isBatch: boolean) {
+        const { id, path, body } = message;
+        const modelName = this.extractModelName(path);
+      
+        console.log(`Processing Task [${id}] (Batch: ${isBatch})...`);
+        this.messages$.next({ type: 'info', text: `Processing ${isBatch ? 'BatchEmbed' : 'Embed'} ${id}` });
+        console.log(body);
+        
+        try {
+            let result;
+            if (isBatch) {
+                // --- 批量嵌入 (Batch Embedding) ---
+                // REST API body: { requests: [{ content: { parts: [{ text: "..." }] } }, ...] }
+                // JS SDK 需要: embedContent({ model, contents: ["...", "...", ...] })
+                
+                if (!body.requests || !Array.isArray(body.requests)) {
+                    throw new Error("Invalid batch embed request: 'requests' field missing or not an array.");
+                }
+
+                // 【核心修复】从 REST 格式中提取所有文本，放入一个字符串数组
+                const textsToEmbed: string[] = body.requests.map((req: any) => {
+                    return req?.content?.parts?.[0]?.text || '';
+                }).filter((text: string) => text); // 过滤掉空字符串
+
+                if (textsToEmbed.length === 0) {
+                    throw new Error("Batch embed request contains no text to process.");
+                }
+
+                // 【关键】调用一次 embedContent，传入字符串数组
+                result = await this.ai.models.embedContent({
+                    model: modelName,
+                    contents: textsToEmbed
+                });
+                
+                // SDK 返回的已经是 { embeddings: [...] } 格式，与 REST 批量接口一致
+
+            } else {
+                // --- 单个嵌入 (Non-batch) ---
+                // REST API body: { content: { parts: [{ text: "..." }] } }
+                // JS SDK 需要: embedContent({ model, contents: ["..."] })
+                
+                const textToEmbed = body?.content?.parts?.[0]?.text;
+                if (typeof textToEmbed !== 'string') {
+                    throw new Error("Invalid embed request: text content is missing.");
+                }
+
+                // 【关键】调用一次 embedContent，传入包含单个字符串的数组
+                result = await this.ai.models.embedContent({
+                    model: modelName,
+                    contents: [textToEmbed]
+                });
+                
+                // SDK 返回的是 { embedding: {...} }，与 REST 单个接口一致
+            }
+            
+            // 原生透传
+            this.sendMessage({ 
+                id, 
+                success: true, 
+                payload: JSON.parse(JSON.stringify(result)) 
+            });
+
+            console.log(`Task [${id}] Completed.`);
+
+        } catch (error: any) {
+          console.error(`Task [${id}] Failed:`, error.message);
+            this.sendMessage({ id, success: false, error: error.message });
+        }
+    }
+
+
     // --- 【核心升级】流式缓冲处理器 (原生对象透传版) ---
     private async processStream(id: string, sdkParams: any) {
         try {
@@ -245,24 +332,6 @@ export class GeminiService {
             type: 'batch', // 标记为批量数据
             chunks: chunks // 发送对象数组
         });
-    }
-
-    // --- 【核心升级】全能参数清洗器 ---
-    private normalizeRequestBody(body: any): any {
-        // 1. 先处理 contents 里的 inlineData (因为这个最特殊)
-        if (body.contents) {
-            body.contents = this.normalizeContents(body.contents);
-        }
-
-        // 2. 递归转换 Config 和 Tools 的 Key 为驼峰
-        // 我们只转换配置项，保留 contents 不动（因为已经单独处理了）
-        const { contents, ...rest } = body;
-        const camelRest = this.toCamelCaseRecursive(rest);
-
-        return {
-            contents,
-            ...camelRest
-        };
     }
 
     // 递归将 snake_case 转换为 camelCase
